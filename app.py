@@ -3,7 +3,7 @@
 # Email: lizhenghao@shanghaitech.edu.cn
 # Institute: SIST
 # Created: 2026-06-05
-# Last Modified: 2026-06-06
+# Last Modified: 2026-06-08
 # Description: Project selection service for SI100B
 
 from flask import Flask, request, jsonify, render_template
@@ -13,7 +13,7 @@ import os
 
 app = Flask(__name__)
 
-DB_FILE = "selections.db"
+DB_FILE = "data/selections.db"
 
 # ==========================================================
 # Logging

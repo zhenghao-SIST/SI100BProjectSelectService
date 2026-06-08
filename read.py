@@ -3,7 +3,7 @@
 # Email: lizhenghao@shanghaitech.edu.cn
 # Institute: SIST
 # Created: 2026-06-05
-# Last Modified: 2026-06-06
+# Last Modified: 2026-06-08
 # Description: TODO
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
@@ -21,8 +21,8 @@ projectDict = {
     6: "文本",
 }
 
-DB_FILE = "selections.db"
-CSV_FILE = "lists.csv"
+DB_FILE = "data/selections.db"
+CSV_FILE = "data/lists.csv"
 
 # ==========================================================
 # 读取数据库
@@ -209,7 +209,7 @@ df = pd.DataFrame(
 # ==========================================================
 
 with pd.ExcelWriter(
-    "output.xlsx",
+    "data/output.xlsx",
     engine="openpyxl"
 ) as writer:
 
@@ -235,7 +235,7 @@ print(
 # ==========================================================
 
 with open(
-    "unchosen.csv",
+    "data/unchosen.csv",
     mode="w",
     newline="",
     encoding="utf-8-sig"

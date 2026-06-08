@@ -3,7 +3,7 @@
 # Email: lizhenghao@shanghaitech.edu.cn
 # Institute: SIST
 # Created: 2026-06-06
-# Last Modified: 2026-06-07
+# Last Modified: 2026-06-08
 # Description: TODO
 # gunicorn_config.py
 import multiprocessing
@@ -18,8 +18,8 @@ keepalive = 2
 
 
 # 日志
-accesslog = "access.log"
-errorlog = "error.log"
+accesslog = "data/access.log"
+errorlog = "data/error.log"
 loglevel = "info"
 
 # 进程命名（方便管理）

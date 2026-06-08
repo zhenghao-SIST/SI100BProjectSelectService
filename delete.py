@@ -3,7 +3,7 @@
 # Email: lizhenghao@shanghaitech.edu.cn
 # Institute: SIST
 # Created: 2026-06-05
-# Last Modified: 2026-06-06
+# Last Modified: 2026-06-08
 # Description: TODO
 #!/usr/bin/env python
 # Author: Zhenghao Li
@@ -18,7 +18,7 @@ import sys
 import argparse
 import logging
 
-DB_FILE = "selections.db"
+DB_FILE = "data/selections.db"
 
 # ==========================================================
 # Logging
