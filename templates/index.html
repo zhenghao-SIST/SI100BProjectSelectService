@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SI100B projects</title>
+    <link rel="static" href="styles.css">
+</head>
+<body>
+    <h1>信导项目选择系统(正式)</h1>
+    <form id="selection-form">
+        <label for="student-id">学号1:</label>
+        <input type="text" id="student-id" name="student-id" required>
+
+        <label for="student-id">学号2:</label>
+        <input type="text" id="student-id1" name="student-id1">
+
+        <label for="student-id">学号3:</label>
+        <input type="text" id="student-id2" name="student-id2">
+
+        <label for="selection">选择选项:</label>
+        <select id="selection" name="selection">
+            <option value="1">miniCPU(娄鑫)</option>
+            <option value="2">手写数字识别(陆林燕)</option>
+            <option value="3">物联网(刘闯)</option>
+            <option value="4">人脸表情检测(李正浩)</option>
+            <option value="5">Puzzle solver(范睿)</option>
+            <option value="6">文本分类(林竹雨)</option>
+        </select>
+
+        <button type="submit">提交</button>
+    </form>
+
+    <p id="message"></p>
+    <hr>
+
+    <h2>查询选好的项目和队友</h2>
+    
+    <div id="query-section">
+        <label for="query-student-id">输入学号:</label>
+        <input type="text" id="query-student-id">
+    
+        <button id="query-btn">查询</button>
+    </div>
+    
+    <p id="query-message"></p>
+
+    <script src="{{ url_for('static', filename='scripts.js') }}"></script>
+
+</body>
+</html>
