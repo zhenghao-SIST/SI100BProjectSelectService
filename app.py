@@ -1,413 +1,183 @@
 #!/usr/bin/env python
+#-*- coding: utf-8 -*-
 # Author: Zhenghao Li
 # Email: lizhenghao@shanghaitech.edu.cn
 # Institute: SIST
-# Created: 2026-06-05
-# Last Modified: 2026-06-06
-# Description: Project selection service for SI100B
-
+# Date: 2024-12-03
 from flask import Flask, request, jsonify, render_template
 import sqlite3
-import logging
 import os
 
 app = Flask(__name__)
 
-DB_FILE = "selections.db"
+def is_valid(student_id) -> bool:
+    try :
+        if student_id.isdigit():
+            v = int( student_id)
+            if v < 2021000000 or v > 2026000000 :
+                return False
+            return True
+        else:
+            return False
+    except :
+        return False
 
-# ==========================================================
-# Logging
-# ==========================================================
+def check_duplicate_student_ids(student_id, student_id1, student_id2):
+    conn = sqlite3.connect('selections.db', timeout=10)
+    c = conn.cursor()
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s"
-)
+    # 检查是否有重复学号，并返回重复的学号
+    c.execute('''
+        SELECT student_id, student_id1, student_id2 FROM submissions
+        WHERE ? IN (student_id, student_id1, student_id2)
+           OR ? IN (student_id, student_id1, student_id2)
+           OR ? IN (student_id, student_id1, student_id2)
+        LIMIT 1
+    ''', (student_id, student_id1, student_id2))
 
-# ==========================================================
-# Database
-# ==========================================================
+    result = c.fetchone()
+    conn.close()
 
-def get_db():
-    conn = sqlite3.connect(
-        DB_FILE,
-        timeout=10,
-        check_same_thread=False
-    )
+    if result:
+        # 返回重复的学号
+        for sid in (student_id, student_id1, student_id2):
+            if sid in result:
+                return sid
+    return None
 
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-
-    return conn
-
-
+# 初始化数据库
 def init_db():
-    with get_db() as conn:
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA synchronous=NORMAL")
+    conn = sqlite3.connect('selections.db', timeout=10)
+    c = conn.cursor()
 
-        # -------------------------
-        # 队伍表
-        # -------------------------
-        conn.execute("""
-        CREATE TABLE IF NOT EXISTS teams(
-            team_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            selection INTEGER NOT NULL,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-        """)
+    # 创建选择计数表
+    c.execute('''CREATE TABLE IF NOT EXISTS selection_counts (option INTEGER, count INTEGER)''')
+    for i in range(1, 6):
+        c.execute('INSERT OR IGNORE INTO selection_counts (option, count) VALUES (?, ?)', (i, 0))
 
-        # -------------------------
-        # 成员表
-        # student_id 全局唯一
-        # -------------------------
-        conn.execute("""
-        CREATE TABLE IF NOT EXISTS members(
-            student_id TEXT PRIMARY KEY,
-            team_id INTEGER NOT NULL,
+    # 创建提交记录表，用于存储学号和选择
+    c.execute('''CREATE TABLE IF NOT EXISTS submissions (student_id TEXT, student_id1 TEXT, student_id2 TEXT, selection INTEGER, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(student_id))''')
 
-            FOREIGN KEY(team_id)
-            REFERENCES teams(team_id)
-            ON DELETE CASCADE
-        )
-        """)
+    conn.commit()
+    conn.close()
 
-        # -------------------------
-        # 统计表
-        # -------------------------
-        #conn.execute("""
-        #CREATE TABLE IF NOT EXISTS selection_counts(
-        #    option INTEGER PRIMARY KEY,
-        #    count INTEGER NOT NULL DEFAULT 0
-        #)
-        #""")
-
-        #for i in range(1, 6):
-
-        #    conn.execute("""
-        #    INSERT OR IGNORE INTO selection_counts(
-        #        option,
-        #        count
-        #    )
-        #    VALUES(?,0)
-        #    """, (i,))
-
-        # -------------------------
-        # 索引
-        # -------------------------
-
-        conn.execute("""
-        CREATE INDEX IF NOT EXISTS idx_members_team
-        ON members(team_id)
-        """)
-
-        conn.execute("""
-        CREATE INDEX IF NOT EXISTS idx_teams_selection
-        ON teams(selection)
-        """)
-
-        conn.commit()
-
-    logging.info("Database initialized")
-
-
-# ==========================================================
-# Utils
-# ==========================================================
-
-def is_valid(student_id: str) -> bool:
-
-    if not student_id:
-        return False
-
-    if not student_id.isdigit():
-        return False
-
-    sid = int(student_id)
-
-    return 2021000000 <= sid <= 2026000000
-
-
-def get_json():
-
-    data = request.get_json(silent=True)
-
-    if data is None:
-        raise ValueError("Invalid JSON")
-
-    return data
-
-
+# 获取当前选项选择数量
 def get_selection_counts():
-    with get_db() as conn:
-        rows = conn.execute("""
-        SELECT
-            selection,
-            COUNT(*) AS cnt
-        FROM teams
-        GROUP BY selection
-        """).fetchall()
+    conn = sqlite3.connect('selections.db', timeout=10)
+    c = conn.cursor()
+    c.execute('SELECT option, count FROM selection_counts')
+    counts = c.fetchall()
+    conn.close()
+    return dict(counts)
 
-    counts = {i: 0 for i in range(1, 6)}
+# 更新选项选择数量
+def update_selection_count(option):
+    conn = sqlite3.connect('selections.db', timeout=10)
+    c = conn.cursor()
+    c.execute('UPDATE selection_counts SET count = count + 1 WHERE option = ?', (option,))
+    conn.commit()
+    conn.close()
 
-    for row in rows:
-        counts[row["selection"]] = row["cnt"]
-
-    return counts
-
-# ==========================================================
-# Routes
-# ==========================================================
-
-@app.route("/")
-def index():
-    return render_template("index.html")
-
-
-# ==========================================================
-# Submit
-# ==========================================================
-
-@app.route("/submit", methods=["POST"])
-def submit_selection():
-
+# 存储提交记录到 submissions 表
+def store_submission(student_id, student_id1, student_id2, selection):
+    conn = sqlite3.connect('selections.db',timeout=10)
+    c = conn.cursor()
     try:
-
-        data = get_json()
-
-        request_data = [
-            data["student_id"].strip(),
-            data["student_id1"].strip(),
-            data["student_id2"].strip()
-        ]
-
-        student_ids = [x for x in request_data if x != '']
-
-        selection = int(data["selection"])
-
-    except Exception:
-
-        return jsonify({
-            "success": False,
-            "message": "参数错误"
-        }), 400
-
-    # --------------------------------
-    # 队内重复检查
-    # --------------------------------
-
-    if len(set(student_ids)) != len(student_ids):
-
-        return jsonify({
-            "success": False,
-            "message": "队伍内存在重复学号"
-        })
-
-    # --------------------------------
-    # 学号合法性
-    # --------------------------------
-
-    for sid in student_ids:
-
-        if not is_valid(sid):
-
-            return jsonify({
-                "success": False,
-                "message": f"学号 {sid} 不合法"
-            })
-
-    # --------------------------------
-    # 名额限制
-    # --------------------------------
-    try:
-        with get_db() as conn:
-            cursor = conn.cursor()
-
-            cursor.execute("BEGIN IMMEDIATE")  # 获取写锁
-
-            # 在事务内检查名额
-            counts = cursor.execute(
-                "SELECT COUNT(*) FROM teams WHERE selection=?",
-                (selection,)
-            ).fetchone()[0]
-
-            if selection == 2 and counts >= 12:
-                return jsonify({
-                    "success": False,
-                    "message": "手写数字识别选择已满"
-                })
-
-            if selection == 3 and counts >= 20:
-                return jsonify({
-                    "success": False,
-                    "message": "物联网选择已满"
-                })
-
-            # 创建队伍
-            cursor.execute("""
-            INSERT INTO teams(selection)
-            VALUES(?)
-            """, (selection,))
-
-            team_id = cursor.lastrowid
-
-            # 插入成员
-            # student_id 为 PRIMARY KEY
-            # 自动实现全局查重
-            for sid in student_ids:
-                cursor.execute("""
-                INSERT INTO members(
-                    student_id,
-                    team_id
-                )
-                VALUES(?,?)
-                """, (
-                    sid,
-                    team_id
-                ))
-            conn.commit()
-
-        logging.info(
-            "Team %s submitted option %s",
-            team_id,
-            selection
-        )
-
-        return jsonify({
-            "success": True,
-            "message": "提交成功"
-        })
-
+        c.execute('INSERT INTO submissions (student_id, student_id1, student_id2, selection) VALUES (?, ?, ?, ?)',
+                  (student_id, student_id1, student_id2, selection))
+        conn.commit()
     except sqlite3.IntegrityError:
+        # 如果重复插入，返回错误
+        conn.close()
+        raise ValueError("重复提交！")
+    conn.close()
 
-        return jsonify({
-            "success": False,
-            "message": "队伍中存在已报名学号"
-        })
+@app.route('/')
+def index():
+    return render_template('index.html')
 
-    except Exception as e:
-
-        logging.exception(e)
-
-        return jsonify({
-            "success": False,
-            "message": "服务器内部错误"
-        }), 500
-
-
-# ==========================================================
-# Query
-# ==========================================================
-
-@app.route("/query", methods=["POST"])
-def query_selection():
-
-    try:
-
-        data = get_json()
-
-        student_id = data["student_id"].strip()
-
-    except Exception:
-
-        return jsonify({
-            "success": False,
-            "message": "参数错误"
-        }), 400
-
-    if not is_valid(student_id):
-
-        return jsonify({
-            "success": False,
-            "message": "学号不合法"
-        })
-
-    try:
-
-        with get_db() as conn:
-
-            # 找队伍
-
-            row = conn.execute("""
-            SELECT team_id
-            FROM members
-            WHERE student_id=?
-            """, (student_id,)).fetchone()
-
-            if row is None:
-
-                return jsonify({
-                    "success": False,
-                    "message": "未查询到记录"
-                })
-
-            team_id = row["team_id"]
-
-            # 查询项目
-
-            row = conn.execute("""
-            SELECT selection
-            FROM teams
-            WHERE team_id=?
-            """, (team_id,)).fetchone()
-
-            selection = row["selection"]
-
-            # 查询成员
-
-            rows = conn.execute("""
-            SELECT student_id
-            FROM members
-            WHERE team_id=?
-            ORDER BY student_id
-            """, (team_id,)).fetchall()
-
-            members = [
-                r["student_id"]
-                for r in rows
-            ]
-
-        return jsonify({
-            "success": True,
-            "selection": selection,
-            "members": members
-        })
-
-    except Exception as e:
-
-        logging.exception(e)
-
-        return jsonify({
-            "success": False,
-            "message": "服务器内部错误"
-        }), 500
-
-
-# ==========================================================
-# Admin (可选)
-# ==========================================================
-
-@app.route("/stats")
-def stats():
+@app.route('/submit', methods=['GET','POST'])
+def submit_selection():
+    data = request.get_json()
+    student_id = data['student_id'].strip()
+    student_id1 = data['student_id1'].strip()
+    student_id2 = data['student_id2'].strip()
+    selection = int(data['selection'])
 
     counts = get_selection_counts()
 
-    return jsonify(counts)
+    # 检查选项是否超出限制
+    if selection == 2 and counts[2] >= 12:
+        return jsonify({'success': False, 'message': '手写数字识别选择已满！'})
+    if selection == 3 and counts[3] >= 20:
+        return jsonify({'success': False, 'message': '物联网的选择已满！'})
+
+    # 存储学号和选择到 submissions 表
+    for std in (student_id, student_id1, student_id2): 
+        if not is_valid(std):
+            #print("ILLEGAL: {}".format(std))
+            return jsonify({'success': False, 'message': f'学号 {std} 不合法！'})
+
+    duplicate_id = check_duplicate_student_ids(student_id, student_id1, student_id2)
+    if duplicate_id:
+        return jsonify({'success': False, 'message': f'学号 {duplicate_id} 已存在，不允许重复提交！'})
+
+    try:
+        store_submission(student_id, student_id1, student_id2, selection)
+    except ValueError:
+        print("high {} {} {}".format(student_id, student_id1, student_id2))
+        return jsonify({'success': False, 'message': '同学你手速太快了，第一次已受理，重复提交，本次被拒绝！'})
+    # 更新选择数量
+    update_selection_count(selection)
+    
+    return jsonify({'success': True, 'message': f'学号 {student_id} {student_id1} {student_id2} 选择了选项 {selection}！'})
+
+@app.route('/query', methods=['POST'])
+def query_selection():
+    data = request.get_json()
+    student_id = data['student_id'].strip()
+
+    if not is_valid(student_id):
+        return jsonify({
+            'success': False,
+            'message': '学号不合法！'
+        })
+
+    conn = sqlite3.connect('selections.db', timeout=10)
+    c = conn.cursor()
+
+    c.execute('''
+        SELECT student_id, student_id1, student_id2, selection
+        FROM submissions
+        WHERE student_id = ?
+           OR student_id1 = ?
+           OR student_id2 = ?
+        LIMIT 1
+    ''', (student_id, student_id, student_id))
+
+    result = c.fetchone()
+    conn.close()
 
 
-# ==========================================================
-# Main
-# ==========================================================
+    if result:
+        sid0, sid1, sid2, selection = result
 
-if not os.path.exists(DB_FILE):
-    logging.info("Creating database")
-init_db()
+        return jsonify({
+            'success': True,
+            'selection': selection,
+            'members': [sid0, sid1, sid2]
+        })
 
-if __name__ == "__main__":
+    return jsonify({
+        'success': False,
+        'message': '未查询到该学号的选项信息！'
+    })
 
-    app.run(
-        host="0.0.0.0",
-        port=5000,
-        threaded=True,
-        debug=False
-    )
+if os.path.exists("selections.db"):
+    print("exist DB")
+else:
+    print("init_db")
+    init_db()  # 初始化数据库
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000, threaded=True, debug=False)

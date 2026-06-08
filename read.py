@@ -1,258 +1,118 @@
 #!/usr/bin/env python
+#-*- coding: utf-8 -*-
 # Author: Zhenghao Li
 # Email: lizhenghao@shanghaitech.edu.cn
 # Institute: SIST
-# Created: 2026-06-05
-# Last Modified: 2026-06-06
-# Description: TODO
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
+# Date: 2024-12-03
 
 import sqlite3
 import csv
 import pandas as pd
-
 projectDict = {
-    1: "miniCPU",
-    2: "手写数字识别",
-    3: "IOT",
-    4: "人脸表情检测",
-    5: "puzzle solver",
-    6: "文本",
-}
+        1: "miniCPU",
+        2: "手写数字识别",
+        3: "IOT",
+        4: "人脸表情检测",
+        5: "puzzle solver",
+        6: "文本",
+        }
 
-DB_FILE = "selections.db"
-CSV_FILE = "lists.csv"
+class Team:
+    def __init__(self, selection):
+        self.selection = selection
+        self.members = set()
+        self.name = []
 
-# ==========================================================
-# 读取数据库
-# ==========================================================
+    def add(self, member):
+        self.members.add(member)
 
-conn = sqlite3.connect(DB_FILE)
-conn.row_factory = sqlite3.Row
+    def addName(self, name):
+        self.name.append(name)
 
-# 获取所有队伍
+    def toList(self):
+        if len(self.name) != len(self.members):
+            return None
 
-teams = conn.execute("""
-SELECT
-    team_id,
-    selection
-FROM teams
-ORDER BY team_id
-""").fetchall()
+conn = sqlite3.connect('./selections.db')
+cursor = conn.cursor()
+cursor.execute('SELECT * FROM submissions')
+rows = cursor.fetchall()
 
-# 获取所有成员
-
-members = conn.execute("""
-SELECT
-    student_id,
-    team_id
-FROM members
-""").fetchall()
+# 创建team
+allID = {}
+teams = [];
+for row in rows:
+    team = Team(row[3])
+    for i in range(3):
+        ID = int(row[i].strip())
+        # 哪些学生说ID写错了 给他们在这里改过来
+        #if ID == 2023521062 :
+        #    team.selection = 5
+        #if i ==2 and ID == 2025531075 :
+        #    ID = 2025533126
+        #if i ==2 and ID == 2025533053 :
+        #    ID = 2025533066
+        #if i ==2 and ID == 2025533125 :
+        #    ID = 2025533129
+        #if i ==2 and ID == 2025592778 :
+        #    ID = 2025591040
+        #if i ==2 and ID == 2025533058 :
+        #    ID = 2025533033
+        #if i ==2 and ID == 2025533137 :
+        #    ID = 2025533062
+        #if ID == 2022531121 :
+        #    ID = 2025531121
+        #if i == 2 and ID == 2025531050 :
+        #    ID = 2025531047
+        allID[ID] = row[3]
+        team.add(ID)
+    teams.append(team)
 
 conn.close()
 
-# ==========================================================
-# team_id -> 成员列表
-# ==========================================================
 
-team_members = {}
+with open('lists.csv', mode='r', encoding='utf-8') as file:
+    csv_reader = csv.reader(file)
+    next(csv_reader)
 
-all_selected_ids = set()
+    pool = {}
+    unchosen = []
+    #检查还有哪些学生没有选
+    for row in csv_reader:
+        if int(row[5]) not in allID:
+            unchosen.append([row[5], row[6], row[14]])
+        pool[int(row[5])] = (row[6],row[14])
 
-for row in members:
+    #把学号和名字对应上，如果一个队所有成员都找不到具体人，则删除这个队伍
+    outData = []
+    for t in teams:
+        newRow = [t.selection]
+        for m in t.members:
+            if m in pool:
+                newRow.append(str(m))
+                newRow.append(pool[m][0])
+                newRow.append(pool[m][1])
+            else:
+                print(f"{m} Not Found!")
+        if len(newRow) > 1:
+            outData.append(newRow)
 
-    sid = int(row["student_id"])
-    team_id = row["team_id"]
+    for i in range(len(outData)):
+        while len(outData[i]) < 10 :
+            outData[i].append(None)  # 或者填充其他默认值，如 None 或 ''
 
-    all_selected_ids.add(sid)
+    df = pd.DataFrame(outData, columns=["selection", "ID0", "name0", "Email0",\
+                                                     "ID1", "name1", "Email1",\
+                                                     "ID2", "name2", "Email2"])
+    with pd.ExcelWriter('output.xlsx', engine='openpyxl') as writer:
+        for group_value, group_df in df.groupby('selection'):
+            tableName = projectDict[group_value]
+            group_df.to_excel(writer, sheet_name=f"{tableName}", index=False)
 
-    team_members.setdefault(team_id, []).append(sid)
+    #with open('output.csv', mode='w+', newline='', encoding='utf-8') as file:
+    #    csv_writer = csv.writer(file)
+    #    csv_writer.writerows(outData)
 
-# ==========================================================
-# CSV 学生信息
-# ==========================================================
-
-pool = {}
-unchosen = []
-
-with open(
-    CSV_FILE,
-    mode="r",
-    encoding="utf-8"
-) as file:
-
-    reader = csv.reader(file)
-
-    next(reader)
-
-    for row in reader:
-
-        try:
-
-            sid = int(row[5])
-
-            name = row[6]
-            email = row[14]
-
-            pool[sid] = (
-                name,
-                email
-            )
-
-            if sid not in all_selected_ids:
-
-                unchosen.append([
-                    sid,
-                    name,
-                    email
-                ])
-
-        except Exception:
-            pass
-
-# ==========================================================
-# 输出Excel
-# ==========================================================
-
-all_output_rows = []
-
-for team in teams:
-
-    team_id = team["team_id"]
-    selection = team["selection"]
-
-    row_data = [
-        team_id,
-        selection
-    ]
-
-    members_list = team_members.get(
-        team_id,
-        []
-    )
-
-    valid_member_count = 0
-
-    for sid in members_list:
-
-        if sid in pool:
-
-            name, email = pool[sid]
-
-            row_data.extend([
-                sid,
-                name,
-                email
-            ])
-
-            valid_member_count += 1
-
-        else:
-
-            print(
-                f"{sid} Not Found!"
-            )
-
-    if valid_member_count > 0:
-
-        all_output_rows.append(
-            row_data
-        )
-
-# ==========================================================
-# 动态生成列名
-# 支持任意人数队伍
-# ==========================================================
-
-max_member_num = 0
-
-for row in all_output_rows:
-
-    member_num = (len(row) - 2) // 3
-
-    max_member_num = max(
-        max_member_num,
-        member_num
-    )
-
-columns = [
-    "team_id",
-    "selection"
-]
-
-for i in range(max_member_num):
-
-    columns.extend([
-        f"ID{i}",
-        f"name{i}",
-        f"Email{i}"
-    ])
-
-# 补齐长度
-
-required_len = len(columns)
-
-for row in all_output_rows:
-
-    while len(row) < required_len:
-
-        row.append(None)
-
-df = pd.DataFrame(
-    all_output_rows,
-    columns=columns
-)
-
-# ==========================================================
-# Excel输出
-# ==========================================================
-
-with pd.ExcelWriter(
-    "output.xlsx",
-    engine="openpyxl"
-) as writer:
-
-    for selection, group_df in df.groupby("selection"):
-
-        sheet_name = projectDict.get(
-            selection,
-            f"Project_{selection}"
-        )
-
-        group_df.to_excel(
-            writer,
-            sheet_name=sheet_name,
-            index=False
-        )
-
-print(
-    f"Exported {len(df)} teams"
-)
-
-# ==========================================================
-# 未选择学生
-# ==========================================================
-
-with open(
-    "unchosen.csv",
-    mode="w",
-    newline="",
-    encoding="utf-8-sig"
-) as file:
-
-    writer = csv.writer(file)
-
-    writer.writerow([
-        "student_id",
-        "name",
-        "email"
-    ])
-
-    writer.writerows(
-        unchosen
-    )
-
-print(
-    f"Unchosen students: {len(unchosen)}"
-)
+    with open('unchosen.csv', mode='w+', newline='', encoding='utf-8-sig') as file:
+        csv_writer = csv.writer(file)
+        csv_writer.writerows(unchosen)
