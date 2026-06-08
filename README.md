@@ -1,4 +1,5 @@
 # CMD
+A dedicated web service designed to streamline the project selection process for the SI100B course
 ```bash
 sudo systemctl start selection-app
 
